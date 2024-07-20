@@ -1,7 +1,6 @@
 package mr
 
 import (
-	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -47,14 +46,14 @@ func (m *Master) checkTimeOut(maptask *task, reduceidx int, timeout int) {
 	if maptask.Status == 1 {
 		maptask.Status = 0
 		m.undoFiles = append(m.undoFiles, maptask)
-		fmt.Printf("map addr :%v ,status: %v", maptask, maptask.Status)
-		fmt.Print("map task timeout\n")
+		// fmt.Printf("map addr :%v ,status: %v", maptask, maptask.Status)
+		// fmt.Print("map task timeout\n")
 	} else if reduceidx != -1 {
-		fmt.Printf("reduce id : %v , m reduceDone[%v] = %v\n", reduceidx, reduceidx, m.reduceDone[reduceidx])
+		// fmt.Printf("reduce id : %v , m reduceDone[%v] = %v\n", reduceidx, reduceidx, m.reduceDone[reduceidx])
 		if m.reduceDone[reduceidx] == false {
 			m.undoReduce = append(m.undoReduce, reduceidx)
-			fmt.Printf("reduce : %v", reduceidx)
-			fmt.Print("reduce task timeout \n")
+			// fmt.Printf("reduce : %v", reduceidx)
+			// fmt.Print("reduce task timeout \n")
 		}
 	}
 
@@ -85,7 +84,7 @@ func (m *Master) GetTask(args Args, reply *Reply) error {
 		m.undoFiles = m.undoFiles[1:]
 		go m.checkTimeOut(nextFile, -1, 10)
 	} else if m.mapFinished == m.mapNumber && m.reduceFinished != m.reduceNumber && len(m.undoReduce) != 0 {
-		fmt.Println(m.undoReduce)
+		// fmt.Println(m.undoReduce)
 		nextReduceid := m.undoReduce[0]
 		reply.ReduceID = nextReduceid
 		reply.Worktype = "reduce"
@@ -110,7 +109,7 @@ func (m *Master) WorkDone(mes FinishMessage, reply *NoneReply) error {
 		}
 		m.mapFinished++
 		m.mapFiles[mes.Ta.TaskFile].Status = 2
-		fmt.Printf("map task : %v has been done , status: %v ,mes Ta addr: %v\n", mes.Ta.TaskFile, mes.Ta.Status, mes.Ta)
+		//fmt.Printf("map task : %v has been done , status: %v ,mes Ta addr: %v\n", mes.Ta.TaskFile, mes.Ta.Status, mes.Ta)
 		for _, midfile := range mes.Midfiles {
 			newreduce := task{TaskFile: midfile, Status: 0,
 				TaskType: 1, MapID: mes.Ta.MapID,
@@ -125,7 +124,7 @@ func (m *Master) WorkDone(mes FinishMessage, reply *NoneReply) error {
 		if m.reduceDone[mes.Reduceidx] == false {
 			m.reduceFinished++
 			m.reduceDone[mes.Reduceidx] = true
-			fmt.Printf("reduce task: %v has been done \n", mes.Reduceidx)
+			// fmt.Printf("reduce task: %v has been done \n", mes.Reduceidx)
 		}
 	}
 	return nil
