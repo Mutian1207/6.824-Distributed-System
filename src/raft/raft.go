@@ -80,6 +80,12 @@ type AppendEntriesArgs struct {
 	LeaderCommit int        // Leader's commitIndex
 }
 
+// AppendEntries reply structure
+type AppendEntriesReply struct {
+	Term    int  // currentTerm, for leader to update itself
+	Success bool // true if follower accepted the entries
+}
+
 // A Go object implementing a single Raft peer.
 type RaftState int
 
@@ -191,7 +197,7 @@ func (rf *Raft) checkElectionTimeout() {
 			DPrintf("Now Raft %v 's election timeout|| starting election", rf.me)
 			rf.startElection()
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 		rf.mu.Unlock()
 	}
 }
@@ -202,15 +208,9 @@ func (rf *Raft) startElection() {
 	rf.currentTerm++
 	rf.votedFor = rf.me
 	rf.persist()
-	args := RequestVoteArgs{
-		Term:         rf.currentTerm,
-		CandidateId:  rf.me,
-		LastLogIndex: len(rf.log) - 1,
-		LastLogTerm:  rf.log[len(rf.log)-1].Term,
-	}
 
 	// 用新的线程 开始选举 避免死锁 checkTimeout里加了锁需要尽快返回解锁
-	go rf.requestVote(&args)
+	go rf.requestVote()
 
 }
 
@@ -224,6 +224,7 @@ func (rf *Raft) becomeFollower(term int) {
 
 // become leader
 func (rf *Raft) becomeLeader() {
+	DPrintf(" Raft %v has become leader", rf.me)
 	rf.state = Leader
 	rf.nextIndex = make([]int, len(rf.peers))
 	rf.matchIndex = make([]int, len(rf.peers))
@@ -233,22 +234,30 @@ func (rf *Raft) becomeLeader() {
 	}
 
 	rf.votedFor = -1
+	go rf.sendHeartbeats()
 }
 
 // become leader)
 // send RequestVote to all peers
-func (rf *Raft) requestVote(args *RequestVoteArgs) {
+func (rf *Raft) requestVote() {
 	// Your code here (2A, 2B).
 	voteCnt := 1                                 // initialized to 1 = vote for self
 	voteChan := make(chan bool, len(rf.peers)-1) // for communicating and managing all goroutines
 	//for loop request to all peer servers
+	args := &RequestVoteArgs{
+		Term:         rf.currentTerm,
+		CandidateId:  rf.me,
+		LastLogIndex: len(rf.log) - 1,
+		LastLogTerm:  rf.log[len(rf.log)-1].Term,
+	}
+
 	for i := range rf.peers {
 		if i != rf.me {
 			go func(i int) {
 				reply := &RequestVoteReply{}
-				// DPrintf("Raft %v is sending vote request to %v", rf.me, i)
+				DPrintf("Raft %v is sending vote request to Raft %v", rf.me, i)
 				ok := rf.sendRequestVote(i, args, reply)
-				DPrintf("Raft %v has sent vote request to %v", rf.me, i)
+
 				rf.mu.Lock()
 				defer rf.mu.Unlock()
 				// 如果身份还是candidate 并且没有任何其他raft服务器 term比请求的currentTerm大 则还能继续发送申请
@@ -300,7 +309,7 @@ func (rf *Raft) requestVote(args *RequestVoteArgs) {
 func (rf *Raft) HandleRequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	DPrintf("Raft %v is handling vote request from %v", rf.me, args.CandidateId)
+	DPrintf("Raft %v is handling vote request from Raft %v", rf.me, args.CandidateId)
 	reply.Term = rf.currentTerm
 
 	if rf.currentTerm > args.Term {
@@ -389,6 +398,85 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	return index, term, isLeader
 }
 
+// leader periodically send heartbeats to follower
+func (rf *Raft) sendHeartbeats() {
+	for !rf.killed() {
+		rf.mu.Lock()
+		if rf.state != Leader {
+			rf.mu.Unlock()
+			time.Sleep(10 * time.Millisecond)
+		} else {
+
+			args := &AppendEntriesArgs{
+				Term:         rf.currentTerm,
+				LeaderId:     rf.me,
+				PrevLogIndex: 0,
+				PrevLogTerm:  0,
+				Entries:      nil,
+				LeaderCommit: rf.commitIndex,
+			}
+			for i := range rf.peers {
+				if rf.state != Leader {
+					break
+				}
+				if i != rf.me && rf.state == Leader {
+					go func(i int) {
+						DPrintf("Raft %v is sending empty heartbeat to Raft %v", rf.me, i)
+						reply := &AppendEntriesReply{}
+						ok := rf.sendAppendEntries(i, args, reply)
+						if ok {
+							if reply.Term > rf.currentTerm {
+								DPrintf("Leader Raft %v's current term %v is < raft %v's term %v , now become a follower",
+									rf.me, rf.currentTerm, i, reply.Term)
+								rf.becomeFollower(reply.Term)
+							}
+						}
+					}(i)
+				}
+
+			}
+			rf.mu.Unlock()
+			time.Sleep(50 * time.Millisecond)
+		}
+
+	}
+}
+
+// leader send heartbeats to follower
+
+// send heartbeats
+func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
+	ok := rf.peers[server].Call("Raft.HandleAppendEntries", args, reply)
+	return ok
+}
+
+// receive and handle heartbeats
+func (rf *Raft) HandleAppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
+	// (2A) 只处理空包
+	DPrintf("Raft %v is handling AppendEntries request from Raft %v", rf.me, args.LeaderId)
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	reply.Term = rf.currentTerm
+
+	if rf.currentTerm > args.Term {
+		reply.Success = false
+
+		return
+	}
+	if args.Entries == nil {
+		reply.Success = true
+		rf.lastTimeHeardHB = time.Now()
+		if rf.currentTerm < args.Term {
+			rf.becomeFollower(args.Term)
+		}
+	}
+
+}
+
+// the service or tester wants to kill a Raft server. the supplies
+// the port number of the Raft server in peers[].
+// n.b. don't worry if command arrives when the server is dead.
+
 // the tester doesn't halt goroutines created by Raft after each test,
 // but it does call the Kill() method. your code can use killed() to
 // check whether Kill() has been called. the use of atomic avoids the
@@ -406,17 +494,6 @@ func (rf *Raft) Kill() {
 func (rf *Raft) killed() bool {
 	z := atomic.LoadInt32(&rf.dead)
 	return z == 1
-}
-
-// raft running
-func (rf *Raft) run() {
-
-	if !rf.killed() {
-
-		// go rf.sendHeartBeats()
-
-	}
-
 }
 
 // the service or tester wants to create a Raft server. the ports
@@ -444,16 +521,19 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.votedFor = -1
 	rf.commitIndex = 0
 	rf.lastApplied = 0
-	rf.log = make([]LogEntry, 10)
+	rf.log = make([]LogEntry, 1)
+	rf.log[0] = LogEntry{Term: 0, Index: 0}
 	rf.nextIndex = make([]int, len(rf.peers))
 	rf.matchIndex = make([]int, len(rf.peers))
 	for i := range rf.nextIndex {
 		rf.nextIndex[i] = 1
+		rf.matchIndex[i] = 0
 	}
 	rf.resetHeartbeat()
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 	// DPrintf(" Raft %v is initialized ! ", me)
 	go rf.checkElectionTimeout()
+	// go rf.sendHeartbeats() //最好在成为leader后再开启线程资源
 	return rf
 }
