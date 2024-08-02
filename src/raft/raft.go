@@ -196,7 +196,7 @@ func (rf *Raft) readPersist(data []byte) {
 
 // get a random election time out durantion
 func (rf *Raft) getRandomElectionTimeout() time.Duration {
-	return time.Duration(200+rand.Intn(300)) * time.Millisecond
+	return time.Duration(200+rand.Intn(150)) * time.Millisecond
 }
 
 // reset last time heartbeat
@@ -215,11 +215,11 @@ func (rf *Raft) checkElectionTimeout() {
 		if rf.state != Leader && time.Since(rf.lastTimeHeardHB) > rf.electionTimeout {
 			rf.lastTimeHeardHB = time.Now()
 
-			DPrintf("Now Raft %v 's election timeout|| starting election", rf.me)
+			DPrintf("Now Raft %v 's election timeout || starting election", rf.me)
 			rf.startElection()
 		}
 		rf.mu.Unlock()
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond)
 
 	}
 }
@@ -276,34 +276,40 @@ func (rf *Raft) requestVote() {
 	rf.mu.Unlock()
 
 	for i := range rf.peers {
+		rf.mu.Lock()
+		if rf.state != Candidate {
+			rf.mu.Unlock()
+			return
+		}
+		rf.mu.Unlock()
 		if i != rf.me {
 			go func(i int) {
-				gid := getGID()
+				// gid := getGID()
 				reply := &RequestVoteReply{}
 				rf.mu.Lock()
 				if rf.state != Candidate {
 					rf.mu.Unlock()
 					return
-				} else {
-					rf.mu.Unlock()
 				}
+				rf.mu.Unlock()
+
 				ok := rf.sendRequestVote(i, args, reply)
 				rf.mu.Lock()
 				defer rf.mu.Unlock()
-				DPrintf("Raft %v is sending vote request to Raft %v , goroutineID: %v, Raft %v Locked", rf.me, i, gid, rf.me)
+				// DPrintf("Raft %v is sending vote request to Raft %v , goroutineID: %v, Raft %v Locked", rf.me, i, gid, rf.me)
 				// 如果身份还是candidate 并且没有任何其他raft服务器 term比请求的currentTerm大 则还能继续发送申请
 				if ok && rf.state == Candidate && args.Term == rf.currentTerm {
 					if reply.VoteGranted {
 						voteChan <- true
 					} else if reply.Term > rf.currentTerm {
-						DPrintf(" Raft %v's term < Raft %v's term, now become a follower", rf.me, i)
+						// DPrintf(" Raft %v's term < Raft %v's term, now become a follower", rf.me, i)
 						rf.becomeFollower(reply.Term)
 						voteChan <- false
 					}
 				} else {
 					voteChan <- false
 				}
-				DPrintf(" Raft %v has sent vote request to Raft %v , goroutineID: %v, Raft %v Unlocked!", rf.me, i, gid, rf.me)
+				// DPrintf(" Raft %v has sent vote request to Raft %v , goroutineID: %v, Raft %v Unlocked!", rf.me, i, gid, rf.me)
 			}(i)
 
 		}
@@ -314,10 +320,10 @@ func (rf *Raft) requestVote() {
 	for i := 0; i < len(rf.peers)-1; i++ {
 		select {
 		case vote := <-voteChan:
-			DPrintf(" Raft %v get one vote !  main process id %v , now Locked ", rf.me, getGID())
+			// DPrintf(" Raft %v get one vote !  main process id %v , now Locked ", rf.me, getGID())
 			rf.mu.Lock()
 			if !vote && rf.state == Follower {
-				DPrintf(" Raft %v requesting vote became follower , get Unlocked and return!  main process id %v", rf.me, getGID())
+				// DPrintf(" Raft %v requesting vote became follower , get Unlocked and return!  main process id %v", rf.me, getGID())
 				rf.mu.Unlock()
 				return
 			} else if vote {
@@ -327,7 +333,7 @@ func (rf *Raft) requestVote() {
 					rf.becomeLeader()
 					// 获得大多数投票 如果还有peer的term > currentTerm 在后续发送hb时更正
 					rf.mu.Unlock()
-					DPrintf(" Raft %v has become leader , get unlocked and return ! main process id %v", rf.me, getGID())
+					// DPrintf(" Raft %v has become leader , get unlocked and return ! main process id %v", rf.me, getGID())
 					return
 				}
 
@@ -351,8 +357,8 @@ func (rf *Raft) requestVote() {
 func (rf *Raft) HandleRequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	gid := getGID()
-	DPrintf("Raft %v is handling vote request from Raft %v, goroutineID: %v ,Raft %v is locked", rf.me, args.CandidateId, gid, rf.me)
+	// gid := getGID()
+	// DPrintf("Raft %v is handling vote request from Raft %v, goroutineID: %v ,Raft %v is locked", rf.me, args.CandidateId, gid, rf.me)
 	reply.Term = rf.currentTerm
 
 	if rf.currentTerm > args.Term {
@@ -446,8 +452,9 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		Command: command,
 		Term:    term,
 	}
-	rf.log = append(rf.log, newEntry)
 	repIdx := len(rf.log)
+	rf.log = append(rf.log, newEntry)
+	DPrintf("Raft %v (leader) has appended newEntry %+v to local", rf.me, command)
 	go rf.replicateEntries(repIdx)
 
 	return index, term, isLeader
@@ -457,10 +464,14 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 func (rf *Raft) replicateEntries(repIdx int) {
 	repChan := make(chan bool, len(rf.peers)-1)
 	repCnt := 1
+
 	// send replication request to all servers
 	for i := range rf.peers {
 		// make sure last log index >= rf.nextIndex[i] and still the Leader
+		rf.mu.Lock()
+		// DPrintf("i:%v , rf.nextIndex[i] :%v , repIdx :%v , rf.state: %v  ", i, rf.nextIndex[i], repIdx, rf.state)
 		if i != rf.me && rf.nextIndex[i] <= repIdx && rf.state == Leader && !rf.killed() {
+			rf.mu.Unlock()
 			// keep sending replication call
 			// fail because of inconsistency -> nextIndex[i] -- then try again
 			go func(i int) {
@@ -476,15 +487,20 @@ func (rf *Raft) replicateEntries(repIdx int) {
 						Entries:      rf.log[nextIdx : repIdx+1],
 						LeaderCommit: rf.commitIndex,
 					}
+					rf.mu.Unlock()
 					reply := &AppendEntriesReply{}
+					DPrintf(" Raft %v is sending AppendNewEntry request to Raft %v", rf.me, i)
 					ok := rf.sendAppendEntries(i, args, reply)
+					DPrintf(" Raft %v has done sent AppendNewEntry request to Raft %v", rf.me, i)
 					success = reply.Success
 					//  If RPC request or response contains term T > currentTerm:
 					// set currentTerm = T, convert to follower (§5.1)
+					rf.mu.Lock()
 					if ok && reply.Term > rf.currentTerm {
 						rf.becomeFollower(reply.Term)
 						success = false
-						break
+						rf.mu.Unlock()
+						return
 					}
 					// 重试
 					if ok && !success {
@@ -493,19 +509,24 @@ func (rf *Raft) replicateEntries(repIdx int) {
 						rf.nextIndex[i] = repIdx + 1
 						rf.matchIndex[i] = repIdx
 						repChan <- true
-						break
+						rf.mu.Unlock()
+						return
 					}
 					rf.mu.Unlock()
 					time.Sleep(10 * time.Millisecond)
 				}
 			}(i)
+		} else {
+			rf.mu.Unlock()
 		}
 	}
 
 	select {
 	case <-repChan:
 		rf.mu.Lock()
+		repCnt++
 		if rf.state != Leader {
+			rf.mu.Unlock()
 			return
 		}
 
@@ -531,18 +552,18 @@ func (rf *Raft) applyToStateMachine() {
 	defer rf.mu.Unlock()
 	// respond to server after apply
 	for i := rf.lastApplied + 1; i < rf.commitIndex+1; i++ {
-		if rf.state == Leader {
-			DPrintf(" Leader Raft %v is applying to state machine and responding", rf.me)
-			applyMsg := ApplyMsg{
-				CommandValid: true,
-				Command:      rf.log[i].Command,
-				CommandIndex: i,
-			}
-			rf.applyCh <- applyMsg
+
+		DPrintf(" Raft %v is applying to state machine and responding", rf.me)
+		applyMsg := ApplyMsg{
+			CommandValid: true,
+			Command:      rf.log[i].Command,
+			CommandIndex: i,
 		}
-		// TODO apply to state machine
+		rf.applyCh <- applyMsg
 		rf.lastApplied = i
 	}
+	// TODO apply to state machine
+
 }
 
 // the tester calls Kill() when a Raft instance won't
@@ -572,7 +593,7 @@ func (rf *Raft) sendHeartbeats() {
 			if i != rf.me {
 				go func(i int) {
 
-					DPrintf("Raft %v is sending empty heartbeat to Raft %v", rf.me, i)
+					// DPrintf("Raft %v is sending empty heartbeat to Raft %v", rf.me, i)
 					reply := &AppendEntriesReply{}
 
 					ok := rf.sendAppendEntries(i, args, reply)
@@ -580,8 +601,8 @@ func (rf *Raft) sendHeartbeats() {
 					defer rf.mu.Unlock()
 					if ok {
 						if reply.Term > rf.currentTerm {
-							DPrintf("Leader Raft %v's current term %v is < raft %v's term %v , now become a follower",
-								rf.me, rf.currentTerm, i, reply.Term)
+							// DPrintf("Leader Raft %v's current term %v is < raft %v's term %v , now become a follower",
+							// 	rf.me, rf.currentTerm, i, reply.Term)
 							rf.becomeFollower(reply.Term)
 						}
 					}
@@ -590,7 +611,7 @@ func (rf *Raft) sendHeartbeats() {
 			}
 
 		}
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 	}
 
 }
@@ -605,46 +626,42 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 
 // receive and handle heartbeats
 func (rf *Raft) HandleAppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
-	// (2A) 只处理空包
-	DPrintf("Raft %v is handling AppendEntries request from Raft %v", rf.me, args.LeaderId)
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+
 	reply.Term = rf.currentTerm
+	reply.Success = false
+
+	if args.Term > rf.currentTerm {
+		rf.becomeFollower(args.Term)
+	}
 
 	if rf.currentTerm > args.Term {
-		reply.Success = false
 		return
 	}
 
-	if args.Entries == nil && !rf.killed() {
-		reply.Success = true
-		rf.lastTimeHeardHB = time.Now()
-		if rf.currentTerm < args.Term {
-			rf.becomeFollower(args.Term)
-		}
+	rf.lastTimeHeardHB = time.Now()
+
+	// 日志一致性检查
+	if args.PrevLogIndex > 0 && (len(rf.log) <= args.PrevLogIndex || rf.log[args.PrevLogIndex].Term != args.PrevLogTerm) {
 		return
 	}
 
-	// if len(rf.log) < args.PrevLogIndex+1 {
-	// 	reply.Success = false
-	// 	return
-	// } else if rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
-	// 	reply.Success = false
-	// 	return
-	// }
+	// 追加新的日志条目
+	if len(args.Entries) > 0 {
+		rf.log = rf.log[:args.PrevLogIndex+1]
+		rf.log = append(rf.log, args.Entries...)
+		rf.persist()
+		DPrintf("Raft %d: Log after append: %v", rf.me, rf.log)
+	}
 
-	// if rf.log[args.PrevLogIndex].Term == args.PrevLogTerm {
-	// 	rf.log = rf.log[:args.PrevLogIndex+1]
-	// 	rf.log = append(rf.log, args.Entries...)
-	// 	reply.Success = true
-	// 	rf.lastTimeHeardHB = time.Now()
-	// 	if args.LeaderCommit > rf.commitIndex {
-	// 		rf.commitIndex = min(args.LeaderCommit, len(rf.log)-1)
-	// 		if rf.commitIndex > rf.lastApplied {
-	// 			go rf.applyToStateMachine()
-	// 		}
-	// 	}
-	// }
+	// 更新 commitIndex
+	if args.LeaderCommit > rf.commitIndex {
+		rf.commitIndex = min(args.LeaderCommit, len(rf.log)-1)
+		go rf.applyToStateMachine()
+	}
+
+	reply.Success = true
 }
 
 // the service or tester wants to kill a Raft server. the supplies
