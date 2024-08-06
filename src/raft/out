@@ -1,0 +1,168 @@
+Test (2B): leader backs up quickly over incorrect follower logs ...
+2024/08/06 12:40:09 Now Raft 4 's election timeout || starting election
+2024/08/06 12:40:09  Raft 4 has become leader
+2024/08/06 12:40:09 Leader 4 has log: [{<nil> 0 0} {4861966608778141014 1 0}]
+2024/08/06 12:40:09  Raft 4 is sending AppendNewEntry request to Raft 0, appending log index: 1
+2024/08/06 12:40:09  Raft 4 is sending AppendNewEntry request to Raft 2, appending log index: 1
+2024/08/06 12:40:09  Raft 4 is sending AppendNewEntry request to Raft 1, appending log index: 1
+2024/08/06 12:40:09  Raft 4 is sending AppendNewEntry request to Raft 3, appending log index: 1
+2024/08/06 12:40:09 Raft 0 log len: 2 
+2024/08/06 12:40:09 Raft 1 log len: 2 
+2024/08/06 12:40:09 Raft 2 log len: 2 
+2024/08/06 12:40:09 Raft 3 log len: 2 
+2024/08/06 12:40:09 Now Raft 1 's election timeout || starting election
+2024/08/06 12:40:09  Raft 1 has become leader
+2024/08/06 12:40:09 Raft replication for new command fail
+2024/08/06 12:40:11 Leader 1 has log: [{<nil> 0 0} {4861966608778141014 1 0} {4861966608778141014 2 0}]
+2024/08/06 12:40:11  Raft 1 is sending AppendNewEntry request to Raft 0, appending log index: 2
+2024/08/06 12:40:11  Raft 1 is sending AppendNewEntry request to Raft 4, appending log index: 2
+2024/08/06 12:40:11  Raft 1 is sending AppendNewEntry request to Raft 2, appending log index: 2
+2024/08/06 12:40:11  Raft 1 is sending AppendNewEntry request to Raft 3, appending log index: 2
+2024/08/06 12:40:11 Raft 0 log len: 3 
+2024/08/06 12:40:11 Raft 2 log len: 3 
+2024/08/06 12:40:11 Raft 3 log len: 3 
+2024/08/06 12:40:11 Now Raft 2 's election timeout || starting election
+2024/08/06 12:40:11  Raft 2 has become leader
+2024/08/06 12:40:11 Raft replication for new command fail
+2024/08/06 12:40:13 Leader 2 has log: [{<nil> 0 0} {4861966608778141014 1 0} {4861966608778141014 2 0} {4861966608778141014 3 0}]
+2024/08/06 12:40:13  Raft 2 is sending AppendNewEntry request to Raft 0, appending log index: 3
+2024/08/06 12:40:13  Raft 2 is sending AppendNewEntry request to Raft 4, appending log index: 3
+2024/08/06 12:40:13  Raft 2 is sending AppendNewEntry request to Raft 3, appending log index: 3
+2024/08/06 12:40:13  Raft 2 is sending AppendNewEntry request to Raft 1, appending log index: 3
+2024/08/06 12:40:13 Raft 0 log len: 4 
+2024/08/06 12:40:13 Raft 3 log len: 4 
+2024/08/06 12:40:13 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:13 Raft replication for new command fail
+2024/08/06 12:40:14 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:14 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:14 Now Raft 3 's election timeout || starting election
+2024/08/06 12:40:14 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:15 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:15 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:15 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:16 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:16 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:16 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:16 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:17 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:17 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:17 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:18 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:18 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:18 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:19 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:19 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:19 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:19 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:20 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:20 Now Raft 3 's election timeout || starting election
+2024/08/06 12:40:20 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:20 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:21 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:21 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:21 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:22 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:22 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:22 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:23 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:23 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:23 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:23 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:24 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:24 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:24 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:25 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:25 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:25 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:25 Now Raft 3 's election timeout || starting election
+2024/08/06 12:40:26 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:26 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:26 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:26 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:27 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:27 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:27 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:28 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:28 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:28 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:29 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:29 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:29 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:30 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:30 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:30 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:30 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:30 Now Raft 3 's election timeout || starting election
+2024/08/06 12:40:31 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:31 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:31 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:32 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:32 Now Raft 3 's election timeout || starting election
+2024/08/06 12:40:32 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:32 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:33 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:33 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:33 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:34 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:34 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:34 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:34 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:35 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:35 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:35 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:36 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:36 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:36 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:37 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:37 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:37 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:37 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:38 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:38 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:38 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:39 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:39 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:39 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:40 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:40 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:40 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:40 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:41 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:41 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:41 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:42 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:42 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:42 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:43 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:43 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:43 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:43 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:44 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:44 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:44 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:45 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:45 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:45 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:46 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:46 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:46 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:46 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:47 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:47 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:47 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:48 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:48 Now Raft 3 's election timeout || starting election
+2024/08/06 12:40:48 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:48 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:49 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:49 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:49 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:50 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:50 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:50 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:50 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:51 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:51 Now Raft 0 's election timeout || starting election
+2024/08/06 12:40:51 Now Raft 0 's election timeout || starting election
+signal: interrupt
+FAIL	main/raft	43.307s

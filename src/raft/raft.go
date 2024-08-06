@@ -42,6 +42,12 @@ func min(a, b int) int {
 	}
 	return b
 }
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
 
 // import "bytes"
 // import "../labgob"
@@ -96,6 +102,7 @@ type AppendEntriesArgs struct {
 	PrevLogTerm  int        // term of PrevLogIndex entry
 	Entries      []LogEntry // log entries to store(empty for heartbeat)
 	LeaderCommit int        // Leader's commitIndex
+	AppendIndex  int
 }
 
 // AppendEntries reply structure
@@ -302,7 +309,7 @@ func (rf *Raft) requestVote() {
 					if reply.VoteGranted {
 						voteChan <- true
 					} else if reply.Term > rf.currentTerm {
-						// DPrintf(" Raft %v's term < Raft %v's term, now become a follower", rf.me, i)
+						DPrintf(" Raft %v's term < Raft %v's term, now become a follower", rf.me, i)
 						rf.becomeFollower(reply.Term)
 						voteChan <- false
 					}
@@ -454,116 +461,91 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	}
 	repIdx := len(rf.log)
 	rf.log = append(rf.log, newEntry)
+	// DPrintf("Leader %v has log: %v", rf.me, rf.log)
 	DPrintf("Raft %v (leader) has appended newEntry %+v to local", rf.me, command)
-	go rf.replicateEntries(repIdx)
+	go rf.startReplication(repIdx)
 
 	return index, term, isLeader
 }
 
-// replicate entries to all peer servers
-func (rf *Raft) replicateEntries(repIdx int) {
-	repChan := make(chan bool, len(rf.peers)-1)
-	repCnt := 1
-
-	// send replication request to all servers
-	for i := range rf.peers {
-		// make sure last log index >= rf.nextIndex[i] and still the Leader
-		rf.mu.Lock()
-		// DPrintf("i:%v , rf.nextIndex[i] :%v , repIdx :%v , rf.state: %v  ", i, rf.nextIndex[i], repIdx, rf.state)
-		if i != rf.me && rf.nextIndex[i] <= repIdx && rf.state == Leader && !rf.killed() {
-			rf.mu.Unlock()
-			// keep sending replication call
-			// fail because of inconsistency -> nextIndex[i] -- then try again
-			go func(i int) {
-				success := false
-				for !success {
-					rf.mu.Lock()
-					nextIdx := rf.nextIndex[i]
-					args := &AppendEntriesArgs{
-						Term:         rf.currentTerm,
-						LeaderId:     rf.me,
-						PrevLogIndex: nextIdx - 1,
-						PrevLogTerm:  rf.log[nextIdx-1].Term,
-						Entries:      rf.log[nextIdx : repIdx+1],
-						LeaderCommit: rf.commitIndex,
-					}
-					rf.mu.Unlock()
-					reply := &AppendEntriesReply{}
-					DPrintf(" Raft %v is sending AppendNewEntry request to Raft %v", rf.me, i)
-					ok := rf.sendAppendEntries(i, args, reply)
-					DPrintf(" Raft %v has done sent AppendNewEntry request to Raft %v", rf.me, i)
-					success = reply.Success
-					//  If RPC request or response contains term T > currentTerm:
-					// set currentTerm = T, convert to follower (§5.1)
-					rf.mu.Lock()
-					if ok && reply.Term > rf.currentTerm {
-						rf.becomeFollower(reply.Term)
-						success = false
-						rf.mu.Unlock()
-						return
-					}
-					// 重试
-					if ok && !success {
-						rf.nextIndex[i]--
-					} else if ok && success {
-						rf.nextIndex[i] = repIdx + 1
-						rf.matchIndex[i] = repIdx
-						repChan <- true
-						rf.mu.Unlock()
-						return
-					}
-					rf.mu.Unlock()
-					time.Sleep(10 * time.Millisecond)
+// 实现更严格的 commitIndex 更新 for server
+func (rf *Raft) updateCommitIndex() {
+	for n := rf.commitIndex + 1; n < len(rf.log); n++ {
+		if rf.log[n].Term == rf.currentTerm {
+			count := 1
+			for i := range rf.peers {
+				//多数服务器match了 append过后才算计数
+				if i != rf.me && rf.matchIndex[i] >= n {
+					count++
 				}
-			}(i)
-		} else {
-			rf.mu.Unlock()
+			}
+			if count > len(rf.peers)/2 {
+				rf.commitIndex = n
+				go rf.applyToStateMachine()
+			}
 		}
 	}
+}
+func (rf *Raft) startReplication(index int) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 
-	select {
-	case <-repChan:
+	for i := range rf.peers {
+		if i != rf.me && rf.nextIndex[i] <= index {
+			go rf.replicateToFollower(i)
+		}
+	}
+}
+
+func (rf *Raft) replicateToFollower(peer int) {
+	for {
 		rf.mu.Lock()
-		repCnt++
 		if rf.state != Leader {
 			rf.mu.Unlock()
 			return
 		}
 
-		if rf.state == Leader && repCnt > len(rf.peers)/2 {
-			// Have replicated the new log to most server
-			// go update commitindex and apply to state machine
-			rf.commitIndex = repIdx
-			if rf.commitIndex > rf.lastApplied {
-				go rf.applyToStateMachine()
-			}
+		prevLogIndex := rf.nextIndex[peer] - 1
+		if prevLogIndex >= len(rf.log) {
+			rf.mu.Unlock()
+			return
+		}
+		DPrintf("raft %v has log : %v", rf.me, rf.log)
+		entries := rf.log[rf.nextIndex[peer]:]
+		args := &AppendEntriesArgs{
+			Term:         rf.currentTerm,
+			LeaderId:     rf.me,
+			PrevLogIndex: prevLogIndex,
+			PrevLogTerm:  rf.log[prevLogIndex].Term,
+			Entries:      entries,
+			LeaderCommit: rf.commitIndex,
 		}
 		rf.mu.Unlock()
-	case <-time.After(300 * time.Millisecond):
-		DPrintf("Raft replication for new command fail")
-		return
-	}
 
-}
-
-// apply to state machine
-func (rf *Raft) applyToStateMachine() {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-	// respond to server after apply
-	for i := rf.lastApplied + 1; i < rf.commitIndex+1; i++ {
-
-		DPrintf(" Raft %v is applying to state machine and responding", rf.me)
-		applyMsg := ApplyMsg{
-			CommandValid: true,
-			Command:      rf.log[i].Command,
-			CommandIndex: i,
+		var reply AppendEntriesReply
+		if rf.sendAppendEntries(peer, args, &reply) {
+			rf.mu.Lock()
+			if reply.Success {
+				rf.nextIndex[peer] = prevLogIndex + len(entries) + 1
+				rf.matchIndex[peer] = rf.nextIndex[peer] - 1
+				rf.updateCommitIndex()
+				rf.mu.Unlock()
+				return
+			} else if reply.Term > rf.currentTerm {
+				rf.becomeFollower(reply.Term)
+				rf.mu.Unlock()
+				return
+			} else {
+				// 日志不匹配，减少 nextIndex 并重试
+				rf.nextIndex[peer] = max(1, rf.nextIndex[peer]-1)
+				rf.mu.Unlock()
+				continue
+			}
+		} else {
+			// RPC 失败，稍后重试
+			time.Sleep(10 * time.Millisecond)
 		}
-		rf.applyCh <- applyMsg
-		rf.lastApplied = i
 	}
-	// TODO apply to state machine
-
 }
 
 // the tester calls Kill() when a Raft instance won't
@@ -579,30 +561,34 @@ func (rf *Raft) sendHeartbeats() {
 			return
 		}
 
-		args := &AppendEntriesArgs{
-			Term:         rf.currentTerm,
-			LeaderId:     rf.me,
-			PrevLogIndex: 0,
-			PrevLogTerm:  0,
-			Entries:      nil,
-			LeaderCommit: rf.commitIndex,
-		}
 		rf.mu.Unlock()
 
 		for i := range rf.peers {
 			if i != rf.me {
 				go func(i int) {
-
+					rf.mu.Lock()
+					args := &AppendEntriesArgs{
+						Term:         rf.currentTerm,
+						LeaderId:     rf.me,
+						PrevLogIndex: rf.nextIndex[i] - 1,
+						PrevLogTerm:  rf.log[rf.nextIndex[i]-1].Term,
+						Entries:      nil,
+						LeaderCommit: rf.commitIndex,
+					}
+					rf.mu.Unlock()
+					// The above code is a comment in Go programming language. It is using the double forward slashes
+					// "//" to indicate a single-line comment. The comment is providing information about the action
+					// being taken in the following code line, which is sending an empty heartbeat from one Raft
+					// instance to another.
 					// DPrintf("Raft %v is sending empty heartbeat to Raft %v", rf.me, i)
 					reply := &AppendEntriesReply{}
-
 					ok := rf.sendAppendEntries(i, args, reply)
 					rf.mu.Lock()
 					defer rf.mu.Unlock()
 					if ok {
 						if reply.Term > rf.currentTerm {
-							// DPrintf("Leader Raft %v's current term %v is < raft %v's term %v , now become a follower",
-							// 	rf.me, rf.currentTerm, i, reply.Term)
+							DPrintf("Leader Raft %v's current term %v is < raft %v's term %v , now become a follower",
+								rf.me, rf.currentTerm, i, reply.Term)
 							rf.becomeFollower(reply.Term)
 						}
 					}
@@ -632,6 +618,8 @@ func (rf *Raft) HandleAppendEntries(args *AppendEntriesArgs, reply *AppendEntrie
 	reply.Term = rf.currentTerm
 	reply.Success = false
 
+	// DPrintf("Raft %v has log: %v", rf.me, rf.log)
+
 	if args.Term > rf.currentTerm {
 		rf.becomeFollower(args.Term)
 	}
@@ -643,25 +631,64 @@ func (rf *Raft) HandleAppendEntries(args *AppendEntriesArgs, reply *AppendEntrie
 	rf.lastTimeHeardHB = time.Now()
 
 	// 日志一致性检查
-	if args.PrevLogIndex > 0 && (len(rf.log) <= args.PrevLogIndex || rf.log[args.PrevLogIndex].Term != args.PrevLogTerm) {
+	if len(rf.log) <= args.PrevLogIndex || (args.PrevLogIndex > 0 && rf.log[args.PrevLogIndex].Term != args.PrevLogTerm) {
+		DPrintf("raft %v 日志提交不一致, log : %v", rf.me, rf.log)
 		return
 	}
 
 	// 追加新的日志条目
-	if len(args.Entries) > 0 {
-		rf.log = rf.log[:args.PrevLogIndex+1]
-		rf.log = append(rf.log, args.Entries...)
+	// 保留已经匹配的日志条目。
+	// 只替换或追加不匹配或新的日志条目。
+
+	insertIndex := args.PrevLogIndex + 1
+	newlogIndex := 0
+	//找到第一个不匹配的日志index
+	for ; insertIndex < len(rf.log) && newlogIndex < len(args.Entries); insertIndex, newlogIndex = insertIndex+1, newlogIndex+1 {
+		if rf.log[insertIndex].Term != args.Entries[newlogIndex].Term {
+			break
+		}
+	}
+	//如果没有不匹配的地方那么说明newEntry已被写在log
+	//如果有不匹配的地方 则log 在insertIndex后面都要删除并写上新的entry
+	if newlogIndex < len(args.Entries) {
+		rf.log = append(rf.log[:insertIndex], args.Entries[newlogIndex:]...)
 		rf.persist()
-		DPrintf("Raft %d: Log after append: %v", rf.me, rf.log)
+		DPrintf("Raft %d log len: %v ", rf.me, len(rf.log))
 	}
 
-	// 更新 commitIndex
+	// 更新 commitIndex 一般heartbeat时会更新
+	// 需要等到leader 提交过后follower 才能提交 由heartbeat触发
+
 	if args.LeaderCommit > rf.commitIndex {
 		rf.commitIndex = min(args.LeaderCommit, len(rf.log)-1)
 		go rf.applyToStateMachine()
 	}
-
+	// DPrintf(" Raft %v has commitIndex :%v, log: %v ,log len:%v, pre log index: %v",
+	// 	rf.me, rf.commitIndex, rf.log, len(rf.log), args.PrevLogIndex)
 	reply.Success = true
+}
+
+// apply to state machine
+func (rf *Raft) applyToStateMachine() {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	// respond to server after apply
+	for i := rf.lastApplied + 1; i < rf.commitIndex+1; i++ {
+
+		applyMsg := ApplyMsg{
+			CommandValid: true,
+			Command:      rf.log[i].Command,
+			CommandIndex: i,
+		}
+
+		DPrintf(" Raft %v is applying log %v to state machine and responding, msg:%v", rf.me, i, applyMsg)
+		rf.applyCh <- applyMsg
+		rf.lastApplied = i
+	}
+	// DPrintf(" Raft %v 's lastapplied idx is %v", rf.me, rf.lastApplied)
+	// TODO apply to state machine
+
 }
 
 // the service or tester wants to kill a Raft server. the supplies
