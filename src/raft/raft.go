@@ -19,6 +19,7 @@ package raft
 
 import (
 	"bytes"
+	"main/labgob"
 	"main/labrpc"
 	"math/rand"
 	"runtime"
@@ -173,12 +174,14 @@ func (rf *Raft) GetState() (int, bool) {
 func (rf *Raft) persist() {
 	// Your code here (2C).
 	// Example:
-	// w := new(bytes.Buffer)
-	// e := labgob.NewEncoder(w)
-	// e.Encode(rf.xxx)
-	// e.Encode(rf.yyy)
-	// data := w.Bytes()
-	// rf.persister.SaveRaftState(data)
+	w := new(bytes.Buffer)
+	e := labgob.NewEncoder(w)
+	e.Encode(rf.currentTerm)
+	e.Encode(rf.votedFor)
+	e.Encode(rf.log)
+	// DPrintf("e.Encode log %v", e.Encode(rf.currentTerm))
+	data := w.Bytes()
+	rf.persister.SaveRaftState(data)
 }
 
 // restore previously persisted state.
@@ -188,17 +191,20 @@ func (rf *Raft) readPersist(data []byte) {
 	}
 	// Your code here (2C).
 	// Example:
-	// r := bytes.NewBuffer(data)
-	// d := labgob.NewDecoder(r)
-	// var xxx
-	// var yyy
-	// if d.Decode(&xxx) != nil ||
-	//    d.Decode(&yyy) != nil {
-	//   error...
-	// } else {
-	//   rf.xxx = xxx
-	//   rf.yyy = yyy
-	// }
+	r := bytes.NewBuffer(data)
+	d := labgob.NewDecoder(r)
+	var currentTerm int
+	var votedFor int
+	var log []LogEntry
+	if d.Decode(&currentTerm) != nil ||
+		d.Decode(&votedFor) != nil ||
+		d.Decode(&log) != nil {
+		DPrintf("Error in decoding persisted state")
+	} else {
+		rf.currentTerm = currentTerm
+		rf.votedFor = votedFor
+		rf.log = log
+	}
 }
 
 // get a random election time out durantion
@@ -263,6 +269,7 @@ func (rf *Raft) becomeLeader() {
 	}
 
 	rf.votedFor = -1
+	rf.persist()
 	go rf.sendHeartbeats()
 }
 
@@ -388,6 +395,7 @@ func (rf *Raft) HandleRequestVote(args *RequestVoteArgs, reply *RequestVoteReply
 				rf.votedFor = args.CandidateId
 				reply.VoteGranted = true
 				rf.lastTimeHeardHB = time.Now()
+				rf.persist()
 			}
 		} else {
 			reply.VoteGranted = false
@@ -461,6 +469,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	}
 	repIdx := len(rf.log)
 	rf.log = append(rf.log, newEntry)
+	rf.persist()
 	// DPrintf("Leader %v has log: %v", rf.me, rf.log)
 	DPrintf("Raft %v (leader) has appended newEntry %+v to local", rf.me, command)
 	go rf.startReplication(repIdx)
@@ -576,11 +585,6 @@ func (rf *Raft) sendHeartbeats() {
 						LeaderCommit: rf.commitIndex,
 					}
 					rf.mu.Unlock()
-					// The above code is a comment in Go programming language. It is using the double forward slashes
-					// "//" to indicate a single-line comment. The comment is providing information about the action
-					// being taken in the following code line, which is sending an empty heartbeat from one Raft
-					// instance to another.
-					// DPrintf("Raft %v is sending empty heartbeat to Raft %v", rf.me, i)
 					reply := &AppendEntriesReply{}
 					ok := rf.sendAppendEntries(i, args, reply)
 					rf.mu.Lock()
@@ -685,6 +689,7 @@ func (rf *Raft) applyToStateMachine() {
 		DPrintf(" Raft %v is applying log %v to state machine and responding, msg:%v", rf.me, i, applyMsg)
 		rf.applyCh <- applyMsg
 		rf.lastApplied = i
+		rf.persist()
 	}
 	// DPrintf(" Raft %v 's lastapplied idx is %v", rf.me, rf.lastApplied)
 	// TODO apply to state machine
