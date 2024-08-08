@@ -771,9 +771,9 @@ func TestFigure8Unreliable2C(t *testing.T) {
 	defer cfg.cleanup()
 
 	cfg.begin("Test (2C): Figure 8 (unreliable)")
-
+	
 	cfg.one(rand.Int()%10000, 1, true)
-
+	fmt.Println(" fail")
 	nup := servers
 	for iters := 0; iters < 1000; iters++ {
 		if iters == 200 {
