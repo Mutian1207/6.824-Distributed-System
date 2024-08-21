@@ -12,7 +12,75 @@
 
 ## GFS (Google File System)
 
+### 设计难点
+
+设计难点循环：
+出发点是获取巨大的性能加成 performance -> 自然想法是通过将数据分割放到大量服务器上 sharding -> 故障是常态 fault tolrance 需要有一定的容错性 -> 想要容错能力就得有复制 relication -> 有复制可能就会有不一致性 inconsistency -> 追求一致性 consistency -> 牺牲性能 low performance
+
+### 一个bad design
+* 客户端双写模型是最糟糕的设计，服务器无法保证写入顺序。
+
+### GFS设计目标
+* 大容量、快速的文件系统
+* 全局的，应用共享
+* 文件分割
+* 自动恢复
+* 单数据中心
+* 内部使用，不对外开放
+* 大型文件顺序读写，关注吞吐量
+
+### GFS架构 
+
+* 一个master 节点保存了文件名和存储位置的对应关系 还有大量chunk服务器用来存储实际的数据 每一个数据会在多台chunk server上备份
+
+* Master节点内保存的数据内容，这里我们关心的主要是两个表单：
+
+1. 第一个是文件名到Chunk ID或者Chunk Handle数组的对应。这个表单告诉你，文件对应了哪些Chunk。但是只有Chunk ID是做不了太多事情的，所以有了第二个表单。 (这个表单需要持久化)
+
+2. 第二个表单记录了Chunk ID到Chunk数据的对应关系。这里的数据又包括了：
+
+  * 每个Chunk存储在哪些服务器上，所以这部分是Chunk服务器的列表
+
+  * 每个Chunk当前的版本号，所以Master节点必须记住每个Chunk对应的版本号。（需要持久化）
+
+  * 所有对于Chunk的写操作都必须在主Chunk（Primary Chunk）上顺序处理，主Chunk是Chunk的多个副本之一。所以，Master节点必须记住哪个Chunk服务器持有主Chunk。
+
+  * 并且，主Chunk只能在特定的租约时间内担任主Chunk，所以，Master节点要记住主Chunk的租约过期时间。
+
+* Master会在磁盘上存储log，每次有数据变更时，Master会在磁盘的log中追加一条记录，并生成CheckPoint（类似于备份点）。
+
+### GFS 读
+1. 客户端发送文件名和偏移量到master
+2. master返回对应的chunk handle(也就是id)和服务器列表
+3. 客户端选择一个网络上最近的服务器读取数据，可能会读到旧数据
+
+### GFS 写
+* 客户端请求master节点
+* master确定primary
+  1. 找到持有最新版本的副本
+  2. 挑选一个作为primary, 其余作为secondary
+  3. 增加版本号
+  4. 告知副本节点版本号，并通过租约机制告知primary租约期内会是primary节点，避免租约内有两个primary
+  5. 持久化版本号
+  6. 返回所有副本节点给客户端
+* 客户端将数据写入到所有副本的临时位置，得到响应通知primary
+* primary顺序执行文件追加，并通知secondary可以追加到文件中，如果全部成功返回给客户端成功，否则返回失败。
+
+### GFS 不保证强一致性
+* 多个副本不保证一致
+
+
 ## Primary-Backup Replication(主从复制)
+* replication并不能提升性能只是用来容错 fault-tolerance
+
+### 复制方式
+
+* 状态转移（state transter） 指的是primary将自己完整的状态拷贝并发送给其他backup
+
+* 复制状态机器（state machine replication）客户端将操作发送给primary，primary依次将操作发送给其他backup，所有副本都有同样的起始状态，执行操作，操作顺序，而且是确定的
+  * 通常来说这种复制，外部的操作或者事件要比服务的状态要小
+  * 随机操作在复制状态机会怎么处理？比如获取系统当前时间或者机器ID，一般Primary会将随机操作的结果复制到backup。
+  
 
 ## Raft
 
